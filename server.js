@@ -11,12 +11,32 @@ app.use(express.json());
 app.post('/apply', async (req, res) => {
   const { url } = req.body;
 
-  const result = await automateJobApplication(url);
+  if (!url) {
+    return res.status(400).json({ error: 'URL is required' });
+  }
 
-  res.json(result);
+  try {
+    await automateJobApplication(url);
+
+    return res.json({
+      status: "completed"
+    });
+
+  } catch (err) {
+    return res.json({
+      status: "error",
+      error: err.message
+    });
+  }
 });
 
-app.listen(3000);
+app.get('/', (req, res) => {
+  res.send("Job Automation API is running 🚀");
+});
+
+app.listen(3000, () => {
+  console.log("Server running on port 3000");
+});
 
 // Load your personal data
 const data = {
