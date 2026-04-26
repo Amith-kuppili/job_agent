@@ -570,15 +570,8 @@ async function automateJobApplication(jobUrl) {
 }
 
 // CLI interface
-if (require.main === module) {
-  const jobUrl = process.argv[2];
-  if (!jobUrl) {
-    console.log('Usage: node server.js <job-url>');
-    console.log('Example: node server.js https://www.linkedin.com/jobs/view/1234567890/');
-    process.exit(1);
-  }
+
   
-  automateJobApplication(jobUrl).catch(console.error);
-}
+ 
 
 module.exports = { automateJobApplication, portalHandlers, selectResume };
