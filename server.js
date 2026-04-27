@@ -8,24 +8,22 @@ const authStatePath = path.resolve(process.cwd(), 'auth.json');
 
 app.use(express.json());
 
-app.post('/apply', async (req, res) => {
-  const { url } = req.body;
-
-   if (!url) {
-    return res.status(400).json({ error: 'URL is required' });
-  }
-
-
+app.post("/run", async (req, res) => {
   try {
+    const { url } = req.body;
+
+    if (!url) {
+      return res.status(400).json({ error: "URL is required" });
+    }
+
     const result = await automateJobApplication(url);
 
     return res.json({
       status: "completed",
       result
     });
-
   } catch (err) {
-    console.error("🔥 ERROR:", err);   // 👈 IMPORTANT
+    console.error("🔥 ERROR:", err);
 
     return res.status(500).json({
       status: "error",
@@ -573,9 +571,16 @@ async function automateJobApplication(jobUrl) {
   }
 }
 
-// CLI interface
-
+// // CLI interface
+// if (require.main === module) {
+//   const jobUrl = process.argv[2];
+//   if (!jobUrl) {
+//     console.log('Usage: node server.js <job-url>');
+//     console.log('Example: node server.js https://www.linkedin.com/jobs/view/1234567890/');
+//     process.exit(1);
+//   }
   
- 
+//   automateJobApplication(jobUrl).catch(console.error);
+// }
 
 module.exports = { automateJobApplication, portalHandlers, selectResume };
