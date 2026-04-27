@@ -11,19 +11,23 @@ app.use(express.json());
 app.post('/apply', async (req, res) => {
   const { url } = req.body;
 
-  if (!url) {
+   if (!url) {
     return res.status(400).json({ error: 'URL is required' });
   }
 
+
   try {
-    await automateJobApplication(url);
+    const result = await automateJobApplication(url);
 
     return res.json({
-      status: "completed"
+      status: "completed",
+      result
     });
 
   } catch (err) {
-    return res.json({
+    console.error("🔥 ERROR:", err);   // 👈 IMPORTANT
+
+    return res.status(500).json({
       status: "error",
       error: err.message
     });
