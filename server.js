@@ -491,7 +491,7 @@ async function automateJobApplication(jobUrl) {
   let detectedPortal = 'generic';
 
   const browser = await chromium.launch({ 
-    headless: false, // Set to true for CI/CD
+    headless: true, // Set to true for CI/CD
     slowMo: 100 // Slow down for better observation
   });
 
