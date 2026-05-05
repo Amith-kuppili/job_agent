@@ -107,17 +107,13 @@ const data = {
 };
 
 // Utility functions
-async function safeClick(page, selector, opts = {}) {
+async function safeFill(page, selector, value) {
   try {
-    const el = await page.$(selector);
-    if (el) {
-      await el.click(opts);
-      return true;
-    }
-    console.warn(`⚠️  Selector not found: ${selector}`);
-    return false;
-  } catch (error) {
-    console.warn(`⚠️  Click failed on ${selector}:`, error.message);
+    const el = await page.waitForSelector(selector, { timeout: 3000 });
+    await el.fill(value);
+    return true;
+  } catch {
+    console.warn(`❌ Failed fill: ${selector}`);
     return false;
   }
 }
@@ -411,8 +407,34 @@ const portalHandlers = {
 
          
           }
-        if (!element && !missingFields.includes(alias)) {
-          missingFields.push(alias);
+        for (const [field, aliases] of Object.entries(fieldMappings)) {
+          let filled = false;
+        
+          for (const alias of aliases) {
+            const selectors = [
+              `input[placeholder*="${alias}" i]`,
+              `input[name*="${alias}" i]`,
+              `input[id*="${alias}" i]`,
+              `textarea[placeholder*="${alias}" i]`,
+              `textarea[name*="${alias}" i]`
+            ];
+        
+            for (const selector of selectors) {
+              const element = await page.$(selector);
+        
+              if (element && data.personal[field]) {
+                await element.fill(data.personal[field]);
+                filled = true;
+                break;
+              }
+            }
+        
+            if (filled) break;
+          }
+        
+          if (!filled) {
+            missingFields.push(field);
+          }
         }
       }
     }
@@ -548,11 +570,10 @@ async function automateJobApplication(jobUrl) {
     console.log(`🌐 Navigating to: ${jobUrl}`);
     await page.goto(jobUrl, { waitUntil: 'networkidle' });
 
-    if (await detectCaptcha(page)) {
-      return {
-        status: 'blocked',
-        reason: 'captcha'
-      };
+    async function detectCaptcha(page) {
+      const frame = await page.locator('iframe[src*="captcha"]').count();
+      const text = await page.content();
+      return frame > 0 || text.toLowerCase().includes('captcha');
     }
     
     // Determine portal type and handle accordingly
@@ -571,6 +592,8 @@ async function automateJobApplication(jobUrl) {
     
     // Wait for confirmation
     await page.waitForTimeout(3000);
+    const isClosed = await page.$('.jobs-easy-apply-modal').catch(() => null);
+    if (!isClosed) break;
     
     // Check for success
     const successSelectors = [
