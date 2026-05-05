@@ -299,7 +299,7 @@ const portalHandlers = {
       }
     }
   },
-
+  await page.goto(jobUrl, { waitUntil: 'domcontentloaded' });
   // Generic portal handler
   async handleGenericPortal(page, jobUrl, missingFields) {
     console.log('🚀 Processing generic job portal...');
@@ -347,11 +347,11 @@ const portalHandlers = {
         }
       }
 
-  // Try again after clicking
-  await page.waitForSelector(formSelectors, { timeout: 5000 }).catch(() => {
-    throw new Error("No application form found on page");
-  });
-}
+      // Try again after clicking
+      await page.waitForSelector(formSelectors, { timeout: 5000 }).catch(() => {
+        throw new Error("No application form found on page");
+      });
+    }
     
     // Fill all possible fields
     await this.fillPersonalInfo(page, missingFields);
