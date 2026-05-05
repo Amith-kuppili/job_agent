@@ -322,7 +322,36 @@ const portalHandlers = {
     }
     
     // Wait for form
-    await page.waitForSelector('form, input, textarea, select', { timeout: 10000 });
+    const formSelectors = 'form, input, textarea, select';
+
+    const hasForm = await page.waitForSelector(formSelectors, {
+      timeout: 5000
+    }).catch(() => null);
+    
+    if (!hasForm) {
+      console.log("⚠️ No form found, trying to click Apply button...");
+    
+      const applySelectors = [
+        'text=Apply',
+        'text=Apply Now',
+        'text=Apply for this job',
+        'button:has-text("Apply")'
+      ];
+    
+      for (const selector of applySelectors) {
+        const btn = await page.$(selector);
+        if (btn) {
+          await btn.click();
+          await page.waitForTimeout(2000);
+          break;
+        }
+      }
+
+  // Try again after clicking
+  await page.waitForSelector(formSelectors, { timeout: 5000 }).catch(() => {
+    throw new Error("No application form found on page");
+  });
+}
     
     // Fill all possible fields
     await this.fillPersonalInfo(page, missingFields);
