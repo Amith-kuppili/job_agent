@@ -593,7 +593,9 @@ async function automateJobApplication(jobUrl) {
     // Wait for confirmation
     await page.waitForTimeout(3000);
     const isClosed = await page.$('.jobs-easy-apply-modal').catch(() => null);
-    if (!isClosed) break;
+    if (!isClosed){
+      break;
+    }
     
     // Check for success
     const successSelectors = [
