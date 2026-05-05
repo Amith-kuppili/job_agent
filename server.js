@@ -16,7 +16,12 @@ app.post("/run", async (req, res) => {
       return res.status(400).json({ error: "URL is required" });
     }
 
-    const result = await automateJobApplication(url);
+    const result = await Promise.race([
+      automateJobApplication(url),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout after 60s")), 60000)
+      )
+    ]);
 
     return res.json({
       status: "completed",
@@ -27,13 +32,14 @@ app.post("/run", async (req, res) => {
 
     return res.status(500).json({
       status: "error",
-      error: err.message
+      error: err.message,
+      stack: process.env.NODE_ENV === "development" ? err.stack : undefined
     });
   }
 });
 
 app.get('/', (req, res) => {
-  res.send("Job Automation API is running 🚀");
+  res.json({ status: "ok", service: "job-automation-api" });
 });
 
 app.listen(3000, () => {
@@ -202,7 +208,7 @@ const portalHandlers = {
       await page.waitForSelector('input[name="session_key"]', { timeout: 5000 });
       
       await safeFill(page, 'input[name="session_key"]', data.personal.email);
-      await safeFill(page, 'input[name="session_password"]', 'YOUR_LINKEDIN_PASSWORD'); // Replace with actual password
+      await safeFill(page, 'input[name="session_password"]', process.env.LINKEDIN_PASSWORD); // Replace with actual password
       await safeClick(page, 'button[type="submit"]');
       
       await page.waitForNavigation();
@@ -374,9 +380,10 @@ const portalHandlers = {
             break;
           }
 
-          if (!element) {
-            missingFields.push(alias);
+         
           }
+        if (!element && !missingFields.includes(alias)) {
+          missingFields.push(alias);
         }
       }
     }
@@ -492,7 +499,8 @@ async function automateJobApplication(jobUrl) {
 
   const browser = await chromium.launch({ 
     headless: true, // Set to true for CI/CD
-    slowMo: 100 // Slow down for better observation
+    args: ["--no-sandbox", "--disable-dev-shm-usage"],
+    slowMo: 50 // Slow down for better observation
   });
 
   const contextOptions = {
