@@ -299,7 +299,7 @@ const portalHandlers = {
       }
     }
   },
-  await page.goto(jobUrl, { waitUntil: 'domcontentloaded' });
+  // await page.goto(jobUrl, { waitUntil: 'domcontentloaded' });
   // Generic portal handler
   async handleGenericPortal(page, jobUrl, missingFields) {
     console.log('🚀 Processing generic job portal...');
