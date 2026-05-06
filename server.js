@@ -592,8 +592,14 @@ async function automateJobApplication(jobUrl) {
     
     // Wait for confirmation
     await page.waitForTimeout(3000);
-    const isClosed = await page.$('.jobs-easy-apply-modal').catch(() => null);
-    if (!isClosed){
+
+    const modalVisible = await page
+      .locator('.jobs-easy-apply-modal')
+      .isVisible()
+      .catch(() => false);
+    
+    if (!modalVisible) {
+      console.log("✅ Easy Apply modal closed");
       break;
     }
     
