@@ -589,27 +589,19 @@ async function automateJobApplication(jobUrl) {
       detectedPortal = 'generic';
       await portalHandlers.handleGenericPortal(page, jobUrl, missingFields);
     }
+
+     // Wait for confirmation
+    await page.waitForTimeout(3000);
+    const modalVisible = await page
+      .locator('.jobs-easy-apply-modal')
+      .isVisible()
+      .catch(() => false);
     
-    // Wait for confirmation
-      for (let step = 0; step < 10; step++) {
-    
-        if (review) {
-          await safeClick(page, 'button:has-text("Review")');
-        }
-      
-      }   // ← LOOP ENDS HERE
-      
-      await page.waitForTimeout(3000);
-      
-      const modalVisible = await page
-        .locator('.jobs-easy-apply-modal')
-        .isVisible()
-        .catch(() => false);
-      
-      if (!modalVisible) {
-        break; // ❌ OUTSIDE LOOP
-      }   
-  
+    if (!modalVisible) {
+      console.log("✅ LinkedIn modal closed");
+    }
+        
+   
     
     // Check for success
     const successSelectors = [
