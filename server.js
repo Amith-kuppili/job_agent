@@ -8,45 +8,7 @@ const authStatePath = path.resolve(process.cwd(), 'auth.json');
 
 app.use(express.json());
 
-app.post("/run", async (req, res) => {
-  try {
-    const { url } = req.body;
-
-    if (!url) {
-      return res.status(400).json({ error: "URL is required" });
-    }
-
-    const result = await Promise.race([
-      automateJobApplication(url),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout after 60s")), 60000)
-      )
-    ]);
-
-    return res.json({
-      status: "completed",
-      result
-    });
-  } catch (err) {
-    console.error("🔥 ERROR:", err);
-
-    return res.status(500).json({
-      status: "error",
-      error: err.message,
-      stack: process.env.NODE_ENV === "development" ? err.stack : undefined
-    });
-  }
-});
-
-app.get('/', (req, res) => {
-  res.json({ status: "ok", service: "job-automation-api" });
-});
-
-app.listen(3000, () => {
-  console.log("Server running on port 3000");
-});
-
-// Load your personal data
+// --- PERSONAL DATA ---
 const data = {
   personal: {
     firstName: "Amith",
@@ -106,15 +68,24 @@ const data = {
   }
 };
 
-// Utility functions
-async function safeFill(page, selector, value) {
-  try {
-    const el = await page.waitForSelector(selector, { timeout: 3000 });
-    await el.fill(value);
-    return true;
-  } catch {
-    console.warn(`❌ Failed fill: ${selector}`);
-    return false;
+// --- UTILITIES ---
+
+async function removeOverlays(page) {
+  console.log("🧹 Removing overlays/cookie banners...");
+  const overlaySelectors = [
+    'button:has-text("Accept")', 
+    'button:has-text("Agree")', 
+    'button:has-text("Allow all")', 
+    '.cookie-banner', 
+    '#cookie-banner', 
+    'button[aria-label="Close"]', 
+    '.modal-close'
+  ];
+  for (const selector of overlaySelectors) {
+    try {
+      const btn = await page.$(selector);
+      if (btn) await btn.click({ force: true });
+    } catch (e) {}
   }
 }
 
@@ -125,7 +96,6 @@ async function safeFill(page, selector, value) {
       await el.fill(value);
       return true;
     }
-    console.warn(`⚠️  Input not found: ${selector}`);
     return false;
   } catch (error) {
     console.warn(`⚠️  Fill failed on ${selector}:`, error.message);
@@ -133,41 +103,9 @@ async function safeFill(page, selector, value) {
   }
 }
 
-async function safeSelect(page, selector, value) {
-  try {
-    const el = await page.$(selector);
-    if (el) {
-      await el.selectOption(value);
-      return true;
-    }
-    console.warn(`⚠️  Select not found: ${selector}`);
-    return false;
-  } catch (error) {
-    console.warn(`⚠️  Select failed on ${selector}:`, error.message);
-    return false;
-  }
-}
-
-async function waitForAndClick(page, selector, timeout = 5000) {
-  try {
-    await page.waitForSelector(selector, { timeout });
-    await page.click(selector);
-    return true;
-  } catch (error) {
-    console.warn(`⚠️  Wait and click failed for ${selector}:`, error.message);
-    return false;
-  }
-}
-
-async function detectCaptcha(page) {
-  const content = await page.content();
-  return content.toLowerCase().includes('captcha');
-}
-
-// Resume selection logic
 async function selectResume(page, jobTitle = '') {
   const title = jobTitle.toLowerCase();
-  let resumeFile = 'Amith_resume.pdf'; // default
+  let resumeFile = 'Amith_resume.pdf'; 
 
   if (/sas|power[- ]?bi|analytics|bi|data science|ml|ai/.test(title)) {
     resumeFile = 'RESUME AMITH.pdf';
@@ -177,202 +115,147 @@ async function selectResume(page, jobTitle = '') {
     resumeFile = 'Automation_BI_resume.pdf';
   }
 
-  const root = process.cwd();
-  const resumePath = path.resolve(root, resumeFile);
-  
-  // Check if file exists
+  const resumePath = path.resolve(process.cwd(), resumeFile);
   if (!fs.existsSync(resumePath)) {
     console.warn(`⚠️  Resume file not found: ${resumePath}`);
-    return 'Amith_resume.pdf'; // fallback to default
+    return path.resolve(process.cwd(), 'Amith_resume.pdf');
   }
-
-  console.log(`📄 Selected resume: ${resumeFile}`);
   return resumePath;
 }
 
-// Portal-specific handlers
+// --- PORTAL HANDLERS ---
+
 const portalHandlers = {
-  // LinkedIn handler
   async handleLinkedIn(page, jobUrl, missingFields) {
     console.log('🚀 Processing LinkedIn job...');
-    
-    // Check if logged in
     const loginBtn = await page.$('text=Sign in');
     if (loginBtn) {
-      console.log('🔐 Logging into LinkedIn...');
       await loginBtn.click();
       await page.waitForSelector('input[name="session_key"]', { timeout: 5000 });
-      
       await safeFill(page, 'input[name="session_key"]', data.personal.email);
-      await safeFill(page, 'input[name="session_password"]', process.env.LINKEDIN_PASSWORD); // Replace with actual password
-      await safeClick(page, 'button[type="submit"]');
-      
+      await safeFill(page, 'input[name="session_password"]', process.env.LINKEDIN_PASSWORD);
+      await page.click('button[type="submit"]');
       await page.waitForNavigation();
-      await page.context().storageState({ path: authStatePath });
     }
 
-    // Look for Easy Apply button
     const easyApplyBtn = await page.$('text=Easy Apply');
     if (easyApplyBtn) {
-      console.log('🎯 Found Easy Apply button');
       await easyApplyBtn.click();
-      
-      // Wait for application modal
       await page.waitForSelector('.jobs-easy-apply-modal', { timeout: 8000 });
       
-      // Handle multi-step form
       let currentStep = 1;
-      while (true) {
-        console.log(`📝 Processing step ${currentStep}`);
-        
-        // Check for file upload
+      while (currentStep <= 10) {
         const fileInput = await page.$('input[type="file"]');
         if (fileInput) {
           const resumePath = await selectResume(page, await page.title());
           await page.setInputFiles('input[type="file"]', resumePath);
-          console.log('✅ Resume uploaded');
         }
-        
-        // Fill personal information
         await this.fillPersonalInfo(page, missingFields);
         
-        // Look for next button
-        const nextBtn = await page.$('button:has-text("Next")');
-        const reviewBtn = await page.$('button:has-text("Review")');
         const submitBtn = await page.$('button:has-text("Submit")');
+        const reviewBtn = await page.$('button:has-text("Review")');
+        const nextBtn = await page.$('button:has-text("Next")');
         
-        if (submitBtn) {
-          console.log('✅ Ready to submit');
-          await submitBtn.click();
-          break;
-        } else if (reviewBtn) {
-          await reviewBtn.click();
-        } else if (nextBtn) {
-          await nextBtn.click();
-        } else {
-          console.log('❌ No navigation buttons found');
-          break;
-        }
+        if (submitBtn) { await submitBtn.click(); break; }
+        else if (reviewBtn) { await reviewBtn.click(); }
+        else if (nextBtn) { await nextBtn.click(); }
+        else { break; }
         
         await page.waitForTimeout(2000);
         currentStep++;
-        
-        if (currentStep > 10) { // Safety break
-          console.log('⚠️  Too many steps, breaking');
-          break;
-        }
       }
     }
   },
 
-  // Indeed handler
   async handleIndeed(page, jobUrl, missingFields) {
     console.log('🚀 Processing Indeed job...');
-    
-    // Check for apply button
     const applyBtn = await page.$('text=Apply now');
     if (applyBtn) {
       await applyBtn.click();
-      
-      // Wait for application form
       await page.waitForSelector('form', { timeout: 8000 });
-      
-      // Fill personal info
       await this.fillPersonalInfo(page, missingFields);
-      
-      // Handle resume upload
       const fileInput = await page.$('input[type="file"]');
       if (fileInput) {
         const resumePath = await selectResume(page, await page.title());
         await page.setInputFiles('input[type="file"]', resumePath);
       }
-      
-      // Submit application
       const submitBtn = await page.$('button[type="submit"]');
-      if (submitBtn) {
-        await submitBtn.click();
-        console.log('✅ Indeed application submitted');
-      }
+      if (submitBtn) await submitBtn.click();
     }
   },
-  // await page.goto(jobUrl, { waitUntil: 'domcontentloaded' });
-  // Generic portal handler
-  async handleGenericPortal(page, jobUrl, missingFields) {
-    console.log('🚀 Processing generic job portal...');
-    
-    // Look for apply buttons
-    const applySelectors = [
-      'text=Apply',
-      'text=Apply Now',
-      'text=Apply for this job',
-      'button[type="submit"]',
-      'input[type="submit"]'
-    ];
-    
-    for (const selector of applySelectors) {
-      const applyBtn = await page.$(selector);
-      if (applyBtn) {
-        await applyBtn.click();
-        break;
-      }
-    }
-    
-    // Wait for form
-    const formSelectors = 'form, input, textarea, select';
 
-    const hasForm = await page.waitForSelector(formSelectors, {
-      timeout: 5000
-    }).catch(() => null);
-    
-    if (!hasForm) {
-      console.log("⚠️ No form found, trying to click Apply button...");
-    
-      const applySelectors = [
-        'text=Apply',
-        'text=Apply Now',
-        'text=Apply for this job',
-        'button:has-text("Apply")'
-      ];
-    
-      for (const selector of applySelectors) {
-        const btn = await page.$(selector);
+  // INTEGRATED IMPROVED GENERIC HANDLER
+  async handleGenericPortal(page, jobUrl, missingFields) {
+    console.log("🌐 Processing Generic Portal...");
+    await removeOverlays(page);
+    await page.waitForTimeout(3000);
+
+    const applySelectors = [
+      'text=Apply', 'text=Apply Now', 'text=Easy Apply', 'text=Submit Application',
+      'button:has-text("Apply")', 'button:has-text("Apply Now")', 'a:has-text("Apply")',
+      '[aria-label*="Apply"]', '[class*="apply"]', '[id*="apply"]'
+    ];
+
+    let clicked = false;
+    for (const sel of applySelectors) {
+      try {
+        const btn = await page.$(sel);
         if (btn) {
-          await btn.click();
-          await page.waitForTimeout(2000);
+          console.log(`✅ Found apply button: ${sel}`);
+          await removeOverlays(page);
+          try {
+            await btn.click({ force: true });
+          } catch {
+            await page.evaluate((selector) => {
+              const el = document.querySelector(selector);
+              if (el) el.click();
+            }, sel);
+          }
+          clicked = true;
+          await page.waitForTimeout(4000);
           break;
         }
+      } catch (err) {}
+    }
+
+    // Iframe detection
+    const frames = page.frames();
+    for (const frame of frames) {
+      try {
+        if (await frame.$('form, input, textarea, select')) {
+          console.log("✅ Found form inside iframe");
+          // Note: Fill logic needs to be applied to the frame specifically if found
+          await this.fillPersonalInfo(frame, missingFields); 
+          return;
+        }
+      } catch {}
+    }
+
+    // Normal form detection
+    const form = await page.$('form, input, textarea, select');
+    if (form) {
+      console.log("✅ Application form detected");
+      await this.fillPersonalInfo(page, missingFields);
+      await this.fillExperience(page, missingFields);
+      await this.fillEducation(page, missingFields);
+      
+      const fileInput = await page.$('input[type="file"]');
+      if (fileInput) {
+        const resumePath = await selectResume(page, await page.title());
+        await page.setInputFiles('input[type="file"]', resumePath);
       }
 
-      // Try again after clicking
-      await page.waitForSelector(formSelectors, { timeout: 5000 }).catch(() => {
-        throw new Error("No application form found on page");
-      });
-    }
-    
-    // Fill all possible fields
-    await this.fillPersonalInfo(page, missingFields);
-    await this.fillExperience(page, missingFields);
-    await this.fillEducation(page, missingFields);
-    
-    // Handle file upload
-    const fileInput = await page.$('input[type="file"]');
-    if (fileInput) {
-      const resumePath = await selectResume(page, await page.title());
-      await page.setInputFiles('input[type="file"]', resumePath);
-    }
-    
-    // Submit
-    const submitBtn = await page.$('button[type="submit"], input[type="submit"]');
-    if (submitBtn) {
-      await submitBtn.click();
-      console.log('✅ Application submitted');
+      const submitBtn = await page.$('button[type="submit"], input[type="submit"]');
+      if (submitBtn) await submitBtn.click();
+    } else if (!clicked) {
+      throw new Error("No apply button or form found on page");
+    } else {
+      throw new Error("Apply clicked but no application form detected");
     }
   },
 
-  // Field filling methods
   async fillPersonalInfo(page, missingFields) {
     console.log('👤 Filling personal information...');
-    
     const fieldMappings = {
       'firstName': ['first name', 'fname', 'given name'],
       'lastName': ['last name', 'lname', 'surname'],
@@ -387,196 +270,74 @@ const portalHandlers = {
     };
     
     for (const [field, aliases] of Object.entries(fieldMappings)) {
+      let filled = false;
       for (const alias of aliases) {
         const selectors = [
-          `input[placeholder*="${alias}" i]`,
-          `input[name*="${alias}" i]`,
-          `input[id*="${alias}" i]`,
-          `textarea[placeholder*="${alias}" i]`,
-          `textarea[name*="${alias}" i]`,
-          `textarea[id*="${alias}" i]`
+          `input[placeholder*="${alias}" i]`, `input[name*="${alias}" i]`, `input[id*="${alias}" i]`,
+          `textarea[placeholder*="${alias}" i]`, `textarea[name*="${alias}" i]`, `textarea[id*="${alias}" i]`
         ];
-        
         for (const selector of selectors) {
-          const element = await page.$(selector);
-          if (element && data.personal[field]) {
-            await element.fill(data.personal[field]);
-            console.log(`✅ Filled ${field}`);
+          if (await safeFill(page, selector, data.personal[field])) {
+            filled = true;
             break;
           }
-
-         
-          }
-        for (const [field, aliases] of Object.entries(fieldMappings)) {
-          let filled = false;
-        
-          for (const alias of aliases) {
-            const selectors = [
-              `input[placeholder*="${alias}" i]`,
-              `input[name*="${alias}" i]`,
-              `input[id*="${alias}" i]`,
-              `textarea[placeholder*="${alias}" i]`,
-              `textarea[name*="${alias}" i]`
-            ];
-        
-            for (const selector of selectors) {
-              const element = await page.$(selector);
-        
-              if (element && data.personal[field]) {
-                await element.fill(data.personal[field]);
-                filled = true;
-                break;
-              }
-            }
-        
-            if (filled) break;
-          }
-        
-          if (!filled) {
-            missingFields.push(field);
-          }
         }
+        if (filled) break;
       }
+      if (!filled) missingFields.push(field);
     }
   },
 
   async fillExperience(page, missingFields) {
-    console.log('💼 Filling experience...');
-    
-    // Look for experience sections
-    const expSections = await page.$$('section, div:has(> h2, > h3):has-text("experience")');
-    
+    const expSections = await page.$$('section, div:has-text("experience")');
     for (const section of expSections) {
-      // Try to add new experience
       const addBtn = await section.$('button:has-text("Add"), button:has-text("+")');
       if (addBtn) {
         await addBtn.click();
         await page.waitForTimeout(1000);
-        
-        // Fill experience fields
-        await this.fillExperienceFields(page, missingFields);
-      }
-    }
-  },
-
-  async fillExperienceFields(page, missingFields) {
-    const exp = data.experience[0]; // Use first experience
-    const fieldMappings = {
-      'title': ['title', 'position', 'role'],
-      'company': ['company', 'employer', 'organization'],
-      'start': ['start date', 'from', 'begin'],
-      'end': ['end date', 'to', 'until'],
-      'location': ['location', 'city', 'country'],
-      'description': ['description', 'responsibilities', 'duties']
-    };
-    
-    for (const [field, aliases] of Object.entries(fieldMappings)) {
-      for (const alias of aliases) {
-        const selectors = [
-          `input[placeholder*="${alias}" i]`,
-          `input[name*="${alias}" i]`,
-          `textarea[placeholder*="${alias}" i]`,
-          `textarea[name*="${alias}" i]`
-        ];
-        
-        for (const selector of selectors) {
-          const element = await page.$(selector);
-          if (element && exp[field]) {
-            await element.fill(exp[field]);
-            break;
-          }
-
-          if (!element) {
-            missingFields.push(alias);
-          }
-        }
+        const exp = data.experience[0];
+        await safeFill(page, 'input[name*="title" i]', exp.title);
+        await safeFill(page, 'input[name*="company" i]', exp.company);
+        await safeFill(page, 'textarea[name*="description" i]', exp.description);
       }
     }
   },
 
   async fillEducation(page, missingFields) {
-    console.log('🎓 Filling education...');
-    
-    const eduSections = await page.$$('section, div:has(> h2, > h3):has-text("education")');
-    
+    const eduSections = await page.$$('section, div:has-text("education")');
     for (const section of eduSections) {
       const addBtn = await section.$('button:has-text("Add"), button:has-text("+")');
       if (addBtn) {
         await addBtn.click();
         await page.waitForTimeout(1000);
-        
-        await this.fillEducationFields(page, missingFields);
-      }
-    }
-  },
-
-  async fillEducationFields(page, missingFields) {
-    const edu = data.education[0];
-    const fieldMappings = {
-      'degree': ['degree', 'qualification', 'course'],
-      'institution': ['institution', 'school', 'college', 'university'],
-      'year': ['year', 'graduation year', 'completion year']
-    };
-    
-    for (const [field, aliases] of Object.entries(fieldMappings)) {
-      for (const alias of aliases) {
-        const selectors = [
-          `input[placeholder*="${alias}" i]`,
-          `input[name*="${alias}" i]`,
-          `textarea[placeholder*="${alias}" i]`,
-          `textarea[name*="${alias}" i]`
-        ];
-        
-        for (const selector of selectors) {
-          const element = await page.$(selector);
-          if (element && edu[field]) {
-            await element.fill(edu[field]);
-            break;
-          }
-
-          if (!element) {
-            missingFields.push(alias);
-          }
-        }
+        const edu = data.education[0];
+        await safeFill(page, 'input[name*="degree" i]', edu.degree);
+        await safeFill(page, 'input[name*="institution" i]', edu.institution);
       }
     }
   }
 };
 
-// Main function
+// --- MAIN AUTOMATION ---
+
 async function automateJobApplication(jobUrl) {
   const missingFields = [];
   let detectedPortal = 'generic';
 
   const browser = await chromium.launch({ 
-    headless: true, // Set to true for CI/CD
+    headless: true, // REQUIRED FOR RENDER/SITES
     args: ["--no-sandbox", "--disable-dev-shm-usage"],
-    slowMo: 50 // Slow down for better observation
+    slowMo: 50 
   });
 
-  const contextOptions = {
-    viewport: { width: 1280, height: 720 }
-  };
-
-  if (fs.existsSync(authStatePath)) {
-    contextOptions.storageState = authStatePath;
-  }
+  const contextOptions = { viewport: { width: 1280, height: 720 } };
+  if (fs.existsSync(authStatePath)) contextOptions.storageState = authStatePath;
 
   const context = await browser.newContext(contextOptions);
-  
   const page = await context.newPage();
   
   try {
-    console.log(`🌐 Navigating to: ${jobUrl}`);
     await page.goto(jobUrl, { waitUntil: 'networkidle' });
-
-    async function detectCaptcha(page) {
-      const frame = await page.locator('iframe[src*="captcha"]').count();
-      const text = await page.content();
-      return frame > 0 || text.toLowerCase().includes('captcha');
-    }
-    
-    // Determine portal type and handle accordingly
     const url = new URL(jobUrl);
     
     if (url.hostname.includes('linkedin')) {
@@ -590,65 +351,32 @@ async function automateJobApplication(jobUrl) {
       await portalHandlers.handleGenericPortal(page, jobUrl, missingFields);
     }
 
-     // Wait for confirmation
-    await page.waitForTimeout(3000);
-    const modalVisible = await page
-      .locator('.jobs-easy-apply-modal')
-      .isVisible()
-      .catch(() => false);
-    
-    if (!modalVisible) {
-      console.log("✅ LinkedIn modal closed");
-    }
-        
-   
-    
-    // Check for success
-    const successSelectors = [
-      'text=application submitted',
-      'text=thank you for applying',
-      'text=application complete',
-      'text=success'
-    ];
-    
-    for (const selector of successSelectors) {
-      const successElement = await page.$(selector);
-      if (successElement) {
-        console.log('🎉 Application successful!');
-        break;
-      }
-    }
-
-    return {
-      status: 'success',
-      missing_fields: missingFields.length ? missingFields : null,
-      portal: detectedPortal
-    };
-    
+    return { status: 'success', missing_fields: missingFields.length ? missingFields : null, portal: detectedPortal };
   } catch (error) {
-    console.error('❌ Error during automation:', error.message);
-    return {
-      status: 'error',
-      error: error.message,
-      missing_fields: missingFields.length ? missingFields : null,
-      portal: detectedPortal
-    };
+    return { status: 'error', error: error.message, missing_fields: missingFields, portal: detectedPortal };
   } finally {
-    await page.waitForTimeout(2000);
     await browser.close();
   }
 }
 
-// // CLI interface
-// if (require.main === module) {
-//   const jobUrl = process.argv[2];
-//   if (!jobUrl) {
-//     console.log('Usage: node server.js <job-url>');
-//     console.log('Example: node server.js https://www.linkedin.com/jobs/view/1234567890/');
-//     process.exit(1);
-//   }
-  
-//   automateJobApplication(jobUrl).catch(console.error);
-// }
+// --- API SERVER ---
 
-module.exports = { automateJobApplication, portalHandlers, selectResume };
+app.post("/run", async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url) return res.status(400).json({ error: "URL is required" });
+
+    const result = await Promise.race([
+      automateJobApplication(url),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout after 60s")), 60000))
+    ]);
+
+    return res.json({ status: "completed", result });
+  } catch (err) {
+    return res.status(500).json({ status: "error", error: err.message });
+  }
+});
+
+app.get('/', (req, res) => res.json({ status: "ok", service: "job-automation-api" }));
+
+app.listen(3000, () => console.log("Server running on port 3000"));
