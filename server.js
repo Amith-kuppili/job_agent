@@ -591,17 +591,25 @@ async function automateJobApplication(jobUrl) {
     }
     
     // Wait for confirmation
-    await page.waitForTimeout(3000);
-
-    const modalVisible = await page
-      .locator('.jobs-easy-apply-modal')
-      .isVisible()
-      .catch(() => false);
+      for (let step = 0; step < 10; step++) {
     
-    if (!modalVisible) {
-      console.log("✅ Easy Apply modal closed");
-      break;
-    }
+        if (review) {
+          await safeClick(page, 'button:has-text("Review")');
+        }
+      
+      }   // ← LOOP ENDS HERE
+      
+      await page.waitForTimeout(3000);
+      
+      const modalVisible = await page
+        .locator('.jobs-easy-apply-modal')
+        .isVisible()
+        .catch(() => false);
+      
+      if (!modalVisible) {
+        break; // ❌ OUTSIDE LOOP
+      }   
+  
     
     // Check for success
     const successSelectors = [
