@@ -8,7 +8,7 @@ const authStatePath = path.resolve(process.cwd(), 'auth.json');
 
 app.use(express.json());
 
-// --- YOUR ACTUAL DATA ---
+// --- YOUR PERSONAL DATA ---
 const data = {
   personal: {
     firstName: "Amith",
@@ -52,24 +52,22 @@ const data = {
 // --- UTILITIES ---
 
 /**
- * IMPROVED SMART FILL
- * Uses fuzzy selectors and simulates human typing to trigger site listeners
+ * SMART FILL SYSTEM
+ * Mimics human behavior to prevent "Missing Fields" errors.
+ * Clears field and types with a delay to trigger site event listeners.
  */
-async function smartFill(page, selectors, value, fieldName, missingFields) {
+async function smartFill(context, selectors, value, fieldName, missingFields) {
   for (const selector of selectors) {
     try {
-      const field = await page.$(selector);
+      const field = await context.$(selector);
       if (field) {
-        // Clear field first
-        await field.fill('');
-        // Type with delay to trigger React/Angular state updates
-        await field.type(value, { delay: 20 });
+        await field.fill(''); // Clear existing text
+        await field.type(value, { delay: 30 }); // Simulate human typing
         console.log(`✅ Filled ${fieldName} using ${selector}`);
         return true;
       }
     } catch (err) {}
   }
-
   if (!missingFields.includes(fieldName)) {
     missingFields.push(fieldName);
   }
@@ -78,11 +76,11 @@ async function smartFill(page, selectors, value, fieldName, missingFields) {
 }
 
 async function removeOverlays(page) {
-  console.log("🧹 Removing overlays/cookie banners...");
+  console.log("🧹 Cleaning page overlays...");
   const overlaySelectors = [
     'button:has-text("Accept")', 'button:has-text("Agree")', 
     'button:has-text("Allow all")', '.cookie-banner', 
-    '#cookie-banner', 'button[aria-label="Close"]'
+    '#cookie-banner', 'button[aria-label="Close"]', '.modal-close'
   ];
   for (const selector of overlaySelectors) {
     try {
@@ -109,52 +107,24 @@ async function selectResume(page, jobTitle = '') {
 
 const portalHandlers = {
   
-  // UPDATED PERSONAL INFO FUNCTION
-  async fillPersonalInfo(page, missingFields) {
-    console.log('👤 Filling personal information using smartFill...');
-    
-    // Use the 'data' object from the top of the script
+  /**
+   * CORE FILLING ENGINE
+   * Accepts 'context' which can be a Page or an IFrame.
+   */
+  async fillPersonalInfo(context, missingFields) {
+    console.log('👤 Filling Personal Info...');
     const user = data.personal;
 
-    await smartFill(page, [
-      'input[name*="first"]', 'input[id*="first"]', 'input[placeholder*="First"]', 'input[autocomplete="given-name"]'
-    ], user.firstName, 'firstName', missingFields);
-
-    await smartFill(page, [
-      'input[name*="last"]', 'input[id*="last"]', 'input[placeholder*="Last"]', 'input[autocomplete="family-name"]'
-    ], user.lastName, 'lastName', missingFields);
-
-    await smartFill(page, [
-      'input[type="tel"]', 'input[name*="phone"]', 'input[id*="phone"]', 'input[placeholder*="Phone"]'
-    ], user.phone, 'phone', missingFields);
-
-    await smartFill(page, [
-      'input[type="email"]', 'input[name*="email"]', 'input[id*="email"]', 'input[placeholder*="Email"]'
-    ], user.email, 'email', missingFields);
-
-    await smartFill(page, [
-      'input[name*="city"]', 'input[id*="city"]', 'input[placeholder*="city"]'
-    ], user.city, 'city', missingFields);
-
-    await smartFill(page, [
-      'input[name*="state"]', 'input[id*="state"]', 'input[placeholder*="state"]'
-    ], user.state, 'state', missingFields);
-
-    await smartFill(page, [
-      'input[name*="zip"]', 'input[id*="zip"]', 'input[name*="postal"]', 'input[placeholder*="zip"]'
-    ], user.zip, 'zip', missingFields);
-
-    await smartFill(page, [
-      'input[name*="country"]', 'input[id*="country"]', 'input[placeholder*="country"]'
-    ], user.country, 'country', missingFields);
-
-    await smartFill(page, [
-      'input[name*="linkedin"]', 'input[id*="linkedin"]', 'input[placeholder*="linkedin"]'
-    ], user.linkedin, 'linkedin', missingFields);
-
-    await smartFill(page, [
-      'input[name*="github"]', 'input[id*="github"]', 'input[placeholder*="github"]'
-    ], user.github, 'github', missingFields);
+    await smartFill(context, ['input[name*="first"]', 'input[id*="first"]', 'input[placeholder*="First"]', 'input[autocomplete="given-name"]'], user.firstName, 'firstName', missingFields);
+    await smartFill(context, ['input[name*="last"]', 'input[id*="last"]', 'input[placeholder*="Last"]', 'input[autocomplete="family-name"]'], user.lastName, 'lastName', missingFields);
+    await smartFill(context, ['input[type="tel"]', 'input[name*="phone"]', 'input[id*="phone"]', 'input[placeholder*="Phone"]'], user.phone, 'phone', missingFields);
+    await smartFill(context, ['input[type="email"]', 'input[name*="email"]', 'input[id*="email"]', 'input[placeholder*="Email"]'], user.email, 'email', missingFields);
+    await smartFill(context, ['input[name*="city"]', 'input[id*="city"]', 'input[placeholder*="city"]'], user.city, 'city', missingFields);
+    await smartFill(context, ['input[name*="state"]', 'input[id*="state"]', 'input[placeholder*="state"]'], user.state, 'state', missingFields);
+    await smartFill(context, ['input[name*="zip"]', 'input[id*="zip"]', 'input[name*="postal"]', 'input[placeholder*="zip"]'], user.zip, 'zip', missingFields);
+    await smartFill(context, ['input[name*="country"]', 'input[id*="country"]', 'input[placeholder*="country"]'], user.country, 'country', missingFields);
+    await smartFill(context, ['input[name*="linkedin"]', 'input[id*="linkedin"]', 'input[placeholder*="linkedin"]'], user.linkedin, 'linkedin', missingFields);
+    await smartFill(context, ['input[name*="github"]', 'input[id*="github"]', 'input[placeholder*="github"]'], user.github, 'github', missingFields);
   },
 
   async handleLinkedIn(page, jobUrl, missingFields) {
@@ -195,8 +165,7 @@ const portalHandlers = {
   async handleGenericPortal(page, jobUrl, missingFields) {
     console.log("🌐 Processing Generic Portal...");
     await removeOverlays(page);
-    await page.waitForTimeout(3000);
-
+    
     const applySelectors = [
       'text=Apply', 'text=Apply Now', 'text=Easy Apply', 'button:has-text("Apply")', '[id*="apply"]'
     ];
@@ -208,14 +177,41 @@ const portalHandlers = {
         if (btn) {
           await btn.click({ force: true });
           clicked = true;
-          await page.waitForTimeout(4000);
+          console.log(`✅ Clicked apply: ${sel}`);
           break;
         }
       } catch (err) {}
     }
 
+    if (clicked) {
+      console.log("⏳ Waiting for form fields to load...");
+      try {
+        await page.waitForSelector('input, textarea, select', { timeout: 10000 });
+        await page.waitForTimeout(2000); 
+      } catch (e) {
+        console.log("⚠️ No inputs found on main page, checking iframes...");
+      }
+    }
+
+    // 1. CHECK IFRAMES FIRST (Crucial for Workday/Taleo)
+    const frames = page.frames();
+    for (const frame of frames) {
+      try {
+        const hasInput = await frame.$('input, textarea, select');
+        if (hasInput) {
+          console.log("✅ Found application form inside an iframe. Switching context...");
+          await this.fillPersonalInfo(frame, missingFields); 
+          const frameSubmit = await frame.$('button[type="submit"], input[type="submit"]');
+          if (frameSubmit) await frameSubmit.click();
+          return; // Form handled in iframe
+        }
+      } catch (err) {}
+    }
+
+    // 2. FALLBACK TO MAIN PAGE
     const form = await page.$('form, input, textarea, select');
     if (form) {
+      console.log("✅ Form found on main page.");
       await this.fillPersonalInfo(page, missingFields);
       const fileInput = await page.$('input[type="file"]');
       if (fileInput) {
@@ -225,7 +221,7 @@ const portalHandlers = {
       const submitBtn = await page.$('button[type="submit"], input[type="submit"]');
       if (submitBtn) await submitBtn.click();
     } else if (!clicked) {
-      throw new Error("No apply button or form found");
+      throw new Error("No apply button or form detected");
     }
   }
 };
@@ -237,7 +233,7 @@ async function automateJobApplication(jobUrl) {
   let detectedPortal = 'generic';
 
   const browser = await chromium.launch({ 
-    headless: true, // REQUIRED for Render/Server
+    headless: true, // REQUIRED for Render/Cloud servers
     args: ["--no-sandbox", "--disable-dev-shm-usage"]
   });
 
